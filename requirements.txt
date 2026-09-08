@@ -1,7 +1,7 @@
-gradio>=4.0.0
-fastapi>=0.100.0
-uvicorn>=0.23.0
+fastapi>=0.110.0
+uvicorn>=0.28.0
+gradio>=4.20.0
 line-bot-sdk>=3.5.0
+google-generativeai>=0.8.0
 python-dotenv>=1.0.0
-google-genai>=0.1.0
 requests>=2.31.0

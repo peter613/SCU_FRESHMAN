@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Header
 import gradio as gr
 
+
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -121,10 +122,24 @@ with gr.Blocks(title="東吳新生小幫手 AI (Gemini 驅動)") as demo:
         )
     )
 
-# 將 Gradio 掛載至 FastAPI 根路徑
+# 啟用隊列並將 Gradio 掛載至 FastAPI 根路徑
+demo.queue()
 app = gr.mount_gradio_app(app, demo, path="/")
 
 if __name__ == "__main__":
     import uvicorn
+    import socket
+    import time
+
     port = int(os.getenv("PORT", 7860))
+
+    # 若剛重啟時前一個程序尚未完全釋放 Port，短暫等待
+    for i in range(5):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", port)) == 0:
+                print(f"Port {port} 正在被佔用或釋放中，等待 3 秒... ({i+1}/5)")
+                time.sleep(3)
+            else:
+                break
+
     uvicorn.run(app, host="0.0.0.0", port=port)

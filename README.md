@@ -1,10 +1,9 @@
 ---
-title: 東吳新生 AI 小幫手 (Gemini + LINE Bot)
+title: 東吳新生 AI 小幫手
 emoji: 🎓
 colorFrom: blue
 colorTo: indigo
 sdk: gradio
-sdk_version: 4.44.0
 app_file: app.py
 pinned: false
 ---
