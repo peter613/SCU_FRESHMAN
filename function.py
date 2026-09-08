@@ -1,13 +1,20 @@
 import os
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # 讀取 Gemini API Key 與模型設定
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-3.5-flash"
+PRIMARY_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+
+# 備選模型清單：優先使用 3.5-flash，若失敗自動降級嘗試 2.5-flash 與 3.5-flash-lite
+FALLBACK_MODELS = [PRIMARY_MODEL, "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite", "gemini-1.5-flash"]
+MODELS_TO_TRY = []
+for m in FALLBACK_MODELS:
+    if m and m not in MODELS_TO_TRY:
+        MODELS_TO_TRY.append(m)
 
 # 讀取知識庫檔案 (knowledge.txt)
 def load_knowledge_base() -> str:
@@ -18,7 +25,7 @@ def load_knowledge_base() -> str:
             with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
-            print(f"讀取 knowledge.txt 失敗: {e}")
+            print(f"讀取 knowledge.txt 失敗: {e}", flush=True)
     return "暫無外部知識庫資料。"
 
 KNOWLEDGE_DATA = load_knowledge_base()
@@ -42,16 +49,57 @@ SYSTEM_INSTRUCTION = f"""
 4. **格式適中**：考慮到學生多用手機或 LINE 閱讀，回覆條理分明、善用列點，避免一大坨難以閱讀的文字。
 """
 
-# 用於管理各使用者的對話 Session（以 user_id 為 Key）
+# 用於管理各使用者的對話 Session
 user_chats: Dict[str, Any] = {}
 user_last_active: Dict[str, float] = {}
+
+def create_chat_with_fallback():
+    """優先使用官方 google-genai，備選 google-generativeai，並在可用模型間依序嘗試"""
+    # 1. 優先嘗試新版官方 google-genai SDK
+    try:
+        from google import genai
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        for model_name in MODELS_TO_TRY:
+            try:
+                chat = client.chats.create(
+                    model=model_name,
+                    config={
+                        "system_instruction": SYSTEM_INSTRUCTION,
+                        "temperature": 0.7,
+                    }
+                )
+                print(f"✅ [google-genai] 成功連線模型: {model_name}", flush=True)
+                return chat
+            except Exception as err:
+                print(f"⚠️ [google-genai] 模型 {model_name} 嘗試失敗: {err}", flush=True)
+    except Exception as e:
+        print(f"google-genai 初始化異常: {e}", flush=True)
+
+    # 2. 備選嘗試傳統 google-generativeai SDK
+    try:
+        import google.generativeai as legacy_genai
+        legacy_genai.configure(api_key=GEMINI_API_KEY)
+        for model_name in MODELS_TO_TRY:
+            try:
+                model = legacy_genai.GenerativeModel(
+                    model_name=model_name,
+                    system_instruction=SYSTEM_INSTRUCTION
+                )
+                chat = model.start_chat(history=[])
+                print(f"✅ [google-generativeai] 成功連線模型: {model_name}", flush=True)
+                return chat
+            except Exception as err:
+                print(f"⚠️ [google-generativeai] 模型 {model_name} 嘗試失敗: {err}", flush=True)
+    except Exception as e:
+        print(f"google-generativeai 初始化異常: {e}", flush=True)
+
+    return None
 
 def get_or_create_chat(user_id: str):
     """取得或建立使用者的 Gemini Chat Session"""
     if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
         return None
 
-    # 清理閒置超過 30 分鐘的連線
     now = time.time()
     if len(user_chats) > 500:
         expired = [uid for uid, t in user_last_active.items() if now - t > 1800]
@@ -60,29 +108,10 @@ def get_or_create_chat(user_id: str):
             user_last_active.pop(uid, None)
 
     if user_id not in user_chats:
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel(
-                model_name=GEMINI_MODEL,
-                system_instruction=SYSTEM_INSTRUCTION
-            )
-            chat = model.start_chat(history=[])
-            user_chats[user_id] = chat
-        except Exception as e:
-            print(f"建立 Gemini Chat 失敗: {e}")
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=GEMINI_API_KEY)
-                model = genai.GenerativeModel(
-                    model_name="gemini-3.5-flash",
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
-                chat = model.start_chat(history=[])
-                user_chats[user_id] = chat
-            except Exception as ex:
-                print(f"Fallback 建立 Chat 也失敗: {ex}")
-                return None
+        chat = create_chat_with_fallback()
+        if not chat:
+            return None
+        user_chats[user_id] = chat
 
     user_last_active[user_id] = now
     return user_chats[user_id]
@@ -99,24 +128,22 @@ def get_bot_reply(user_msg: str, user_id: str = "default_user") -> str:
         return (
             "⚠️ 【系統提示】尚未設定 Gemini API Key！\n\n"
             "請至 Google AI Studio (https://aistudio.google.com/) 免費取得 API Key，\n"
-            "並在 Hugging Face Space 的 Settings ➔ Variables and secrets 中新增 `GEMINI_API_KEY`。"
+            "並在 Render 的 Environment Variables 中設定 `GEMINI_API_KEY`。"
         )
 
     try:
         chat = get_or_create_chat(user_id)
         if not chat:
-            return "抱歉，目前 AI 伺服器忙碌中，請稍後再試一次！"
+            return "抱歉，目前 AI 伺服器忙碌或模型無法連線，請確認你的 Gemini API Key 是否有效！"
 
         response = chat.send_message(msg)
         return response.text.strip()
 
     except Exception as e:
         error_msg = str(e)
-        print(f"Gemini API 呼叫錯誤: {error_msg}")
-        
-        # 若 Session 失效或配額超限，重置該用戶的 Session
+        print(f"❌ Gemini API 呼叫錯誤: {error_msg}", flush=True)
         user_chats.pop(user_id, None)
         return (
-            f"哎呀，恍神了一下（{error_msg[:60]}...），"
+            f"哎呀，學長姐剛才連線恍神了一下（{error_msg[:60]}...），"
             "可以請你再傳送一次剛剛的問題嗎？"
         )
