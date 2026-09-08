@@ -117,6 +117,6 @@ def get_bot_reply(user_msg: str, user_id: str = "default_user") -> str:
         # 若 Session 失效或配額超限，重置該用戶的 Session
         user_chats.pop(user_id, None)
         return (
-            f"哎呀，學長姐剛才連線恍神了一下（{error_msg[:60]}...），"
+            f"哎呀，恍神了一下（{error_msg[:60]}...），"
             "可以請你再傳送一次剛剛的問題嗎？"
         )
