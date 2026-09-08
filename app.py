@@ -31,15 +31,20 @@ line_bot_api = MessagingApi(api_client) if api_client else None
 # 初始化 FastAPI
 app = FastAPI(title="東吳新生系統 - Gemini LINE Bot API")
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health_check():
-    """健康檢查端點"""
+    """健康檢查端點（支援 GET 與 UptimeRobot 常用的 HEAD 請求）"""
     is_ready = bool(handler and configuration and GEMINI_API_KEY)
     return {
         "status": "running",
         "line_ready": bool(handler and configuration),
         "gemini_ready": bool(GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here")
     }
+
+@app.api_route("/callback", methods=["GET", "HEAD"])
+def callback_ping():
+    """供監控工具（如 UptimeRobot）或瀏覽器檢測，避免 405 錯誤"""
+    return {"status": "ok", "message": "LINE Webhook 運行中，真實訊息請發送 POST 請求"}
 
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None)):
@@ -101,7 +106,7 @@ async def web_test_chat(request: Request):
     return {"reply": reply}
 
 # 極致輕量原生網頁介面（免載入龐大 UI 套件，0.1 秒秒開）
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def index():
     line_status = "🟢 已就緒" if (handler and configuration) else "⚠️ 未設定憑證"
     gemini_status = "🟢 已就緒" if (GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here") else "⚠️ 未設定 API Key"
