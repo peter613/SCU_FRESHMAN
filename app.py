@@ -1,8 +1,7 @@
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Header
-import gradio as gr
-
+from fastapi.responses import HTMLResponse
 
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -92,61 +91,107 @@ if handler:
             )
             print("🚀 已成功將回覆傳送至 LINE！", flush=True)
 
-# 定義 Gradio 對話函式 (供網頁端測試使用)
-def gradio_chat(message: str, history: list):
-    return get_bot_reply(message, user_id="gradio_web_user")
+# 供網頁測試使用的輕量 API 端點
+@app.post("/api/test-chat")
+async def web_test_chat(request: Request):
+    data = await request.json()
+    msg = data.get("message", "")
+    reply = get_bot_reply(msg, user_id="web_test_user")
+    return {"reply": reply}
 
-# 建立 Gradio Web 管理與聊天測試介面
-with gr.Blocks(title="東吳新生小幫手 AI (Gemini 驅動)") as demo:
-    gr.Markdown("# 🎓 東吳新生 AI 小幫手 (LINE Bot + Gemini 智能問答)")
-    
-    line_ok = bool(handler and configuration)
-    gemini_ok = bool(GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here")
-    
-    status_line = "🟢 已設定" if line_ok else "⚠️ 尚未設定"
-    status_gemini = "🟢 已設定" if gemini_ok else "⚠️ 尚未設定"
+# 極致輕量原生網頁介面（免載入龐大 UI 套件，0.1 秒秒開）
+@app.get("/", response_class=HTMLResponse)
+def index():
+    line_status = "🟢 已就緒" if (handler and configuration) else "⚠️ 未設定憑證"
+    gemini_status = "🟢 已就緒" if (GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here") else "⚠️ 未設定 API Key"
 
-    gr.Markdown(
-        f"""
-| 模組 | 狀態 | 說明 |
-| :--- | :--- | :--- |
-| **LINE Bot 憑證** | {status_line} | `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` |
-| **Gemini AI 引擎** | {status_gemini} | `GEMINI_API_KEY` (至 Google AI Studio 免費申請) |
+    return f"""
+    <!DOCTYPE html>
+    <html lang="zh-TW">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>東吳新生 AI 小幫手</title>
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; margin: 0; padding: 24px; display: flex; justify-content: center; }}
+            .card {{ background: white; max-width: 580px; width: 100%; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); padding: 28px; box-sizing: border-box; }}
+            h1 {{ color: #0f172a; font-size: 22px; margin-top: 0; display: flex; align-items: center; gap: 8px; }}
+            .badges {{ margin-bottom: 12px; display: flex; gap: 8px; }}
+            .status-badge {{ display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; background: #e0f2fe; color: #0369a1; }}
+            .info-box {{ background: #f8fafc; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 4px; margin: 16px 0; font-size: 13px; color: #334155; line-height: 1.6; }}
+            .chat-box {{ margin-top: 16px; border-top: 1px solid #e2e8f0; padding-top: 16px; }}
+            .chat-history {{ height: 230px; overflow-y: auto; background: #fafafa; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 12px; font-size: 14px; }}
+            .chat-msg {{ margin-bottom: 10px; line-height: 1.5; }}
+            .user-msg {{ color: #2563eb; font-weight: 600; }}
+            .bot-msg {{ color: #1e293b; white-space: pre-wrap; }}
+            .input-group {{ display: flex; gap: 8px; }}
+            input[type="text"] {{ flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; }}
+            input[type="text"]:focus {{ border-color: #3b82f6; }}
+            button {{ background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.15s; }}
+            button:hover {{ background: #2563eb; }}
+            button:disabled {{ background: #94a3b8; cursor: not-allowed; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1>🎓 東吳新生 AI 小幫手</h1>
+            <div class="badges">
+                <span class="status-badge">LINE: {line_status}</span>
+                <span class="status-badge">Gemini: {gemini_status}</span>
+            </div>
+            <div class="info-box">
+                📌 <b>Webhook URL：</b><code>https://scu-freshman.onrender.com/callback</code><br>
+                💡 伺服器運作正常，搭載 Gemini 3.5-flash 與東吳校園知識庫。
+            </div>
+            
+            <div class="chat-box">
+                <h3 style="margin: 0 0 10px 0; font-size: 15px; color: #475569;">💬 即時對話測試（免開 LINE，直接在網頁聊天）</h3>
+                <div class="chat-history" id="chatHistory">
+                    <div class="chat-msg bot-msg">🤖 <b>小幫手：</b>學弟妹好！我是東吳新生小幫手，關於校園、宿舍、選課等問題都可以直接問我喔！</div>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="userInput" placeholder="例如：外雙溪有什麼好吃的？" onkeypress="if(event.key==='Enter') sendTestMsg()">
+                    <button onclick="sendTestMsg()" id="sendBtn">傳送</button>
+                </div>
+            </div>
+        </div>
 
-📌 **LINE Webhook URL**：`https://<你的-Space-名稱>.hf.space/callback`  
-💡 **自訂資料庫**：可以直接編輯 `knowledge.txt` 隨時擴充新生資料與校園常見問題！
-        """
-    )
-    
-    gr.Markdown("---")
-    gr.Markdown("### 💬 即時 AI 對話測試（直接與搭載東吳知識庫的 Gemini 聊天）")
-    
-    gr.ChatInterface(
-        fn=gradio_chat,
-        textbox=gr.Textbox(
-            placeholder="你可以隨意用口語詢問，例如：「大一必修有哪些？」、「外雙溪附近有什麼好吃的？」、「合江學舍離學校遠嗎？」",
-            scale=7
-        )
-    )
+        <script>
+            async function sendTestMsg() {{
+                const input = document.getElementById('userInput');
+                const history = document.getElementById('chatHistory');
+                const sendBtn = document.getElementById('sendBtn');
+                const msg = input.value.trim();
+                if (!msg) return;
 
-# 啟用隊列並將 Gradio 掛載至 FastAPI 根路徑
-demo.queue()
-app = gr.mount_gradio_app(app, demo, path="/")
+                history.innerHTML += `<div class="chat-msg user-msg">👤 <b>你：</b>${{msg}}</div>`;
+                input.value = '';
+                sendBtn.disabled = true;
+                sendBtn.innerText = '思考中...';
+                history.scrollTop = history.scrollHeight;
+
+                try {{
+                    const res = await fetch('/api/test-chat', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ message: msg }})
+                    }});
+                    const data = await res.json();
+                    history.innerHTML += `<div class="chat-msg bot-msg">🤖 <b>小幫手：</b>${{data.reply}}</div>`;
+                }} catch (e) {{
+                    history.innerHTML += `<div class="chat-msg" style="color: red;">❌ 連線異常，請稍後再試</div>`;
+                }} finally {{
+                    sendBtn.disabled = false;
+                    sendBtn.innerText = '傳送';
+                    history.scrollTop = history.scrollHeight;
+                }}
+            }}
+        </script>
+    </body>
+    </html>
+    """
 
 if __name__ == "__main__":
     import uvicorn
-    import socket
-    import time
-
-    port = int(os.getenv("PORT", 7860))
-
-    # 若剛重啟時前一個程序尚未完全釋放 Port，短暫等待
-    for i in range(5):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("127.0.0.1", port)) == 0:
-                print(f"Port {port} 正在被佔用或釋放中，等待 3 秒... ({i+1}/5)")
-                time.sleep(3)
-            else:
-                break
-
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
