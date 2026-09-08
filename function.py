@@ -53,12 +53,24 @@ SYSTEM_INSTRUCTION = f"""
 user_chats: Dict[str, Any] = {}
 user_last_active: Dict[str, float] = {}
 
+# 全域持久化 Google GenAI Client，防止局部變數被回收導致 client closed
+_global_genai_client = None
+
+def get_genai_client():
+    global _global_genai_client
+    if _global_genai_client is None and GEMINI_API_KEY and GEMINI_API_KEY != "your_gemini_api_key_here":
+        try:
+            from google import genai
+            _global_genai_client = genai.Client(api_key=GEMINI_API_KEY)
+        except Exception as e:
+            print(f"google-genai 初始化異常: {e}", flush=True)
+    return _global_genai_client
+
 def create_chat_with_fallback():
     """優先使用官方 google-genai，備選 google-generativeai，並在可用模型間依序嘗試"""
     # 1. 優先嘗試新版官方 google-genai SDK
-    try:
-        from google import genai
-        client = genai.Client(api_key=GEMINI_API_KEY)
+    client = get_genai_client()
+    if client:
         for model_name in MODELS_TO_TRY:
             try:
                 chat = client.chats.create(
@@ -72,8 +84,6 @@ def create_chat_with_fallback():
                 return chat
             except Exception as err:
                 print(f"⚠️ [google-genai] 模型 {model_name} 嘗試失敗: {err}", flush=True)
-    except Exception as e:
-        print(f"google-genai 初始化異常: {e}", flush=True)
 
     # 2. 備選嘗試傳統 google-generativeai SDK
     try:

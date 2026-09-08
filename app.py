@@ -25,6 +25,8 @@ CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 # 初始化 LINE Bot SDK
 handler = WebhookHandler(CHANNEL_SECRET) if CHANNEL_SECRET and CHANNEL_SECRET != "your_channel_secret_here" else None
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN) if CHANNEL_ACCESS_TOKEN and CHANNEL_ACCESS_TOKEN != "your_channel_access_token_here" else None
+api_client = ApiClient(configuration) if configuration else None
+line_bot_api = MessagingApi(api_client) if api_client else None
 
 # 初始化 FastAPI
 app = FastAPI(title="東吳新生系統 - Gemini LINE Bot API")
@@ -81,9 +83,8 @@ if handler:
         reply_text = get_bot_reply(user_text, user_id=user_id)
         print(f"🤖 Gemini 生成回覆: {reply_text[:60]}...", flush=True)
 
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message_with_http_info(
+        if line_bot_api:
+            line_bot_api.reply_message(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
                     messages=[TextMessage(text=reply_text)]
