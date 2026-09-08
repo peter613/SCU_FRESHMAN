@@ -7,7 +7,7 @@ load_dotenv()
 
 # 讀取 Gemini API Key 與模型設定
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-3.5-flash"
 
 # 讀取知識庫檔案 (knowledge.txt)
 def load_knowledge_base() -> str:
@@ -75,7 +75,7 @@ def get_or_create_chat(user_id: str):
                 import google.generativeai as genai
                 genai.configure(api_key=GEMINI_API_KEY)
                 model = genai.GenerativeModel(
-                    model_name="gemini-1.5-flash",
+                    model_name="gemini-3.5-flash",
                     system_instruction=SYSTEM_INSTRUCTION
                 )
                 chat = model.start_chat(history=[])
