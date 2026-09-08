@@ -128,6 +128,27 @@ def get_or_create_chat(user_id: str):
     user_last_active[user_id] = now
     return user_chats[user_id]
 
+def trim_chat_history(chat, max_messages: int = 6):
+    """
+    滑動窗口（Sliding Window）：
+    切片只保留最近 6 則歷史訊息（即 3 輪問答：3 提問 + 3 回覆），
+    避免 Token 像滾雪球一樣膨脹，達到無限連貫聊天且成本可控。
+    """
+    try:
+        # 新版官方 google-genai SDK
+        if hasattr(chat, "_curated_history") and isinstance(chat._curated_history, list):
+            if len(chat._curated_history) > max_messages:
+                chat._curated_history = chat._curated_history[-max_messages:]
+        if hasattr(chat, "_comprehensive_history") and isinstance(chat._comprehensive_history, list):
+            if len(chat._comprehensive_history) > max_messages:
+                chat._comprehensive_history = chat._comprehensive_history[-max_messages:]
+        # 備選 google-generativeai SDK
+        if hasattr(chat, "history") and isinstance(chat.history, list):
+            if len(chat.history) > max_messages:
+                chat.history = chat.history[-max_messages:]
+    except Exception as err:
+        print(f"⚠️ 修剪對話歷史警告: {err}", flush=True)
+
 def get_bot_reply(user_msg: str, user_id: str = "default_user") -> str:
     """
     接收使用者文字訊息，呼叫 Gemini AI 產生智能回覆
@@ -148,7 +169,14 @@ def get_bot_reply(user_msg: str, user_id: str = "default_user") -> str:
         if not chat:
             return "抱歉，目前 AI 伺服器忙碌或模型無法連線，請確認你的 Gemini API Key 是否有效！"
 
+        # 發送前提早修剪歷史，確保本次 API 呼叫最多只包含最近 6 則上下文
+        trim_chat_history(chat, max_messages=6)
+
         response = chat.send_message(msg)
+
+        # 接收回覆後再次修剪，維持乾淨記憶
+        trim_chat_history(chat, max_messages=6)
+
         return response.text.strip()
 
     except Exception as e:
