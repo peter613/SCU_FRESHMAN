@@ -43,13 +43,16 @@ def health_check():
 @app.post("/callback")
 async def callback(request: Request, x_line_signature: str = Header(None)):
     """接收 LINE Webhook 訊息"""
+    print(f"📩 收到 LINE 請求: signature={x_line_signature}", flush=True)
     if not handler or not configuration:
+        print("❌ LINE 憑證未設定！", flush=True)
         raise HTTPException(
             status_code=500,
-            detail="LINE 憑證未設定，請在 Settings ➔ Variables and secrets 中設定 LINE_CHANNEL_SECRET 與 LINE_CHANNEL_ACCESS_TOKEN"
+            detail="LINE 憑證未設定，請在 Render 的 Environment Variables 中設定 LINE_CHANNEL_SECRET 與 LINE_CHANNEL_ACCESS_TOKEN"
         )
 
     if not x_line_signature:
+        print("❌ 缺少 X-Line-Signature 標頭！", flush=True)
         raise HTTPException(status_code=400, detail="缺少 X-Line-Signature 標頭")
 
     body = await request.body()
@@ -57,10 +60,12 @@ async def callback(request: Request, x_line_signature: str = Header(None)):
 
     try:
         handler.handle(body_str, x_line_signature)
+        print("✅ LINE Webhook 處理完成！", flush=True)
     except InvalidSignatureError:
+        print("❌ LINE 數位簽名驗證失敗 (InvalidSignatureError)！請檢查 LINE_CHANNEL_SECRET 是否填錯！", flush=True)
         raise HTTPException(status_code=400, detail="無效的 LINE 簽名 (Invalid Signature)")
     except Exception as e:
-        print(f"處理 Webhook 錯誤: {e}")
+        print(f"❌ 處理 Webhook 錯誤: {e}", flush=True)
         raise HTTPException(status_code=500, detail=str(e))
 
     return "OK"
@@ -70,11 +75,12 @@ if handler:
     @handler.add(MessageEvent, message=TextMessageContent)
     def handle_message(event):
         user_text = event.message.text
-        # 取得傳送訊息的 LINE User ID，以維持個別學生的對話脈絡 (Context)
         user_id = getattr(event.source, "user_id", "default_line_user")
+        print(f"👤 收到學生訊息 [{user_id[:8]}...]: {user_text}", flush=True)
         
         # 呼叫搭載 Gemini 的智能回覆
         reply_text = get_bot_reply(user_text, user_id=user_id)
+        print(f"🤖 Gemini 生成回覆: {reply_text[:60]}...", flush=True)
 
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
@@ -84,6 +90,7 @@ if handler:
                     messages=[TextMessage(text=reply_text)]
                 )
             )
+            print("🚀 已成功將回覆傳送至 LINE！", flush=True)
 
 # 定義 Gradio 對話函式 (供網頁端測試使用)
 def gradio_chat(message: str, history: list):
